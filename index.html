@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>공항철도 AREX 마스터 v2.3</title>
+    <title>공항철도 AREX 마스터 v2.4</title>
     <style>
         :root {
             --panel-bg: #2c3e50;
@@ -205,7 +205,7 @@
         .tcms-btn.active { background: var(--accent-blue); }
 
         /* 공통 버튼 */
-        .rect-btn { width: 100%; padding: 12px 0; border: none; border-radius: 5px; font-weight: bold; color: white; cursor: pointer; margin-bottom: 5px; transition: 0.3s; }
+        .rect-btn { width: 100%; padding: 15px 0; border: none; border-radius: 5px; font-weight: bold; color: white; cursor: pointer; margin-bottom: 10px; transition: 0.3s; }
         .rect-btn:disabled { background: #1a1a1a !important; color: #444; cursor: not-allowed; opacity: 0.5; }
 
         @keyframes blink { 50% { opacity: 0; } }
@@ -238,14 +238,13 @@
     </header>
 
     <main class="main-content">
-        <!-- 1. 왼쪽: 주간제어기 -->
+        <!-- 1. 왼쪽: 주간제어기 (가속) -->
         <section class="lever-area">
             <div style="font-weight:bold; color:var(--led-green); font-size:0.9rem;">주간제어기(P)</div>
             <input type="range" id="pwrLev" class="vertical-lever" min="0" max="5" value="0">
             <div id="pwrVal" class="lever-val" style="color:var(--led-green)">P0</div>
             
-            <div style="width:100%; margin-top:15px;">
-                <button class="rect-btn" style="background:#27ae60" onclick="pressStart()">출발</button>
+            <div style="width:100%; margin-top:30px;">
                 <button class="rect-btn" style="background:#f1c40f; color:black" onclick="handleDoor(true)">문 열림</button>
                 <button class="rect-btn" style="background:#7f8c8d" onclick="handleDoor(false)">문 닫힘</button>
             </div>
@@ -275,15 +274,15 @@
             </div>
         </section>
 
-        <!-- 3. 오른쪽: 제동변환기 -->
+        <!-- 3. 오른쪽: 제동변환기 (감속) -->
         <section class="lever-area">
             <div style="font-weight:bold; color:var(--led-red); font-size:0.9rem;">제동변환기(B)</div>
             <input type="range" id="brkLev" class="vertical-lever" min="0" max="8" value="8">
             <div id="brkVal" class="lever-val" style="color:var(--led-red)">B8</div>
 
-            <div style="width:100%; margin-top:15px;">
+            <div style="width:100%; margin-top:30px;">
                 <button class="rect-btn" style="background:#c0392b" id="btnArrive" onclick="pressArrive()">도착 정지</button>
-                <button class="rect-btn" style="background:radial-gradient(#ff4d4d, #990000); height:70px;" onclick="emergencyBrake()">긴급 제동</button>
+                <button class="rect-btn" style="background:radial-gradient(#ff4d4d, #990000); height:80px;" onclick="emergencyBrake()">긴급 제동</button>
             </div>
         </section>
     </main>
@@ -310,10 +309,7 @@
     let isEB = false;
     let hvac = false;
     let light = false;
-    
-    // 핵심 추가 변수: 현재 역에 도착 처리가 되었는지 여부
     let hasArrivedAtCurrentStation = true; 
-
     let occupancyLevels = [20, 45, 80, 55, 30];
 
     function initRoute() {
@@ -338,7 +334,7 @@
         }
     }
 
-    // 물리 엔진
+    // 물리 엔진 및 자동 출발 로직
     setInterval(() => {
         document.getElementById('clock').innerText = new Date().toLocaleTimeString();
         const pwr = parseInt(document.getElementById('pwrLev').value);
@@ -347,9 +343,23 @@
         document.getElementById('pwrVal').innerText = "P" + pwr;
         document.getElementById('brkVal').innerText = (brk === 0) ? "RUN" : "B" + brk;
 
-        if (isEB) speed -= 4.0;
-        else {
-            if (pwr > 0 && brk === 0 && !isDoorOpen) speed += (pwr * 0.25); 
+        if (isEB) {
+            speed -= 4.0;
+        } else {
+            // [자동 출발 로직] 가속 레버가 1 이상이고, 브레이크가 해제되었으며, 문이 닫혔을 때
+            if (pwr > 0 && brk === 0 && !isDoorOpen) {
+                speed += (pwr * 0.25);
+                
+                // 만약 현재 '도착 완료' 상태라면, 가속하는 순간 '주행 중'으로 상태 변경
+                if (hasArrivedAtCurrentStation) {
+                    hasArrivedAtCurrentStation = false;
+                    isEB = false;
+                    document.getElementById('arriveLockStatus').innerText = "[정차상태] 주행 중";
+                    document.getElementById('arriveLockStatus').style.color = "white";
+                    updateUI();
+                }
+            } 
+            
             if (brk > 0) speed -= (brk * 0.4); 
             else speed -= 0.05;
         }
@@ -360,7 +370,7 @@
         const dispSpeed = Math.floor(speed);
         document.getElementById('speedDisp').innerText = dispSpeed;
         
-        // 도착 정지 버튼 활성화 조건: 0km/h + 아직 도착처리 안됨 + 긴급제동 아님
+        // 도착 정지 버튼 활성화 조건
         const btnArrive = document.getElementById('btnArrive');
         if (dispSpeed === 0 && !isEB && !hasArrivedAtCurrentStation) {
             btnArrive.disabled = false;
@@ -372,7 +382,7 @@
     }, 100);
 
     function handleDoor(open) {
-        if (speed > 0) { speak("열차가 이동 중에는 문을 열 수 없습니다."); return; }
+        if (speed > 0) { speak("열차가 주행 중에는 문을 열 수 없습니다."); return; }
         isDoorOpen = open;
         document.getElementById('doorStatus').innerText = open ? "[출입문] 열림" : "[출입문] 닫힘";
         document.getElementById('doorStatus').style.color = open ? "var(--led-red)" : "var(--led-green)";
@@ -383,25 +393,11 @@
         speak(open ? "문이 열립니다." : "문이 닫힙니다.");
     }
 
-    function pressStart() {
-        if (isDoorOpen) { speak("문을 닫으세요."); return; }
-        if (parseInt(document.getElementById('brkLev').value) > 0) { speak("브레이크를 해제하세요."); return; }
-        
-        // 출발 시점에 '도착 처리 대기' 상태로 변경
-        hasArrivedAtCurrentStation = false; 
-        isEB = false;
-        document.getElementById('arriveLockStatus').innerText = "[정차상태] 주행 중";
-        document.getElementById('arriveLockStatus').style.color = "white";
-        updateUI();
-    }
-
     function pressArrive() {
-        // 이미 도착 처리가 되었다면 실행 안 함
         if (hasArrivedAtCurrentStation) return;
-
         if (sIdx < currentRoute.length - 2) {
             sIdx++;
-            hasArrivedAtCurrentStation = true; // 도착 완료 처리 (잠금)
+            hasArrivedAtCurrentStation = true; 
             updateUI();
             occupancyLevels = occupancyLevels.map(l => Math.max(10, Math.min(95, l + (Math.random()*40 - 20))));
             createOccupancyBoard();
